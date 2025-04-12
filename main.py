@@ -15,34 +15,54 @@ def draw_traffic_light(frame, x, y, is_green):
     cv2.circle(frame, (x, y), 15, (255, 255, 255), 2)
 
 def get_intersection_regions(frame_width, frame_height):
-    """Define regions based on the actual intersection layout"""
-    regions = {
-        'north': (
-            int(frame_width * 0.35),
-            0,
-            int(frame_width * 0.1),
-            int(frame_height * 0.2)
-        ),
-        'south': (
-            int(frame_width * 0.35),
-            int(frame_height * 0.8),
-            int(frame_width * 0.1),
-            int(frame_height * 0.2)
-        ),
-        'east': (
-            int(frame_width * 0.55),
-            int(frame_height * 0.35),
-            int(frame_width * 0.3),
-            int(frame_height * 0.15)
-        ),
-        'west': (
-            int(frame_width * 0.05),
-            int(frame_height * 0.55),
-            int(frame_width * 0.3),
-            int(frame_height * 0.15)
-        )
+    """Get the regions of interest for each direction in the intersection."""
+    # Define the width and height of each region
+    region_width = frame_width // 4
+    region_height = frame_height // 4
+    
+    # Calculate the center of the frame
+    center_x = frame_width // 2
+    center_y = frame_height // 2
+    
+    # Define regions for each direction
+    # North region (moved a little more to the right)
+    north = {
+        'x1': center_x - region_width - region_width//4,  # Moved more to the right
+        'y1': 0,
+        'x2': center_x - region_width//4 - region_width//4,  # Adjusted accordingly
+        'y2': region_height
     }
-    return regions
+    
+    # South region
+    south = {
+        'x1': center_x - region_width//2,
+        'y1': frame_height - region_height,
+        'x2': center_x + region_width//2,
+        'y2': frame_height
+    }
+    
+    # East region (moved more to the left)
+    east = {
+        'x1': frame_width - region_width - region_width//2,  # Moved more to the left
+        'y1': center_y - region_height//2 - region_height//6,  # Moved slightly up
+        'x2': frame_width - region_width//2,  # Adjusted accordingly
+        'y2': center_y + region_height//2 - region_height//6  # Adjusted accordingly
+    }
+    
+    # West region (made bigger and stretched down)
+    west = {
+        'x1': 0,
+        'y1': center_y - region_height//2,  # Stretched up
+        'x2': region_width + region_width//4,  # Made wider
+        'y2': center_y + region_height//2 + region_height//4  # Stretched down
+    }
+    
+    return {
+        'north': north,
+        'south': south,
+        'east': east,
+        'west': west
+    }
 
 class TrafficLightController:
     def __init__(self):
@@ -157,8 +177,8 @@ def main():
     # Pre-calculate regions and positions
     regions = get_intersection_regions(TARGET_WIDTH, target_height)
     traffic_lights = {
-        'north': (TARGET_WIDTH // 2, 30),
-        'south': (TARGET_WIDTH // 2, target_height - 30),
+        'north': (TARGET_WIDTH // 4, 30),  # Moved more to the left
+        'south': (TARGET_WIDTH // 4, target_height - 30),  # Moved more to the left
         'east': (TARGET_WIDTH - 30, target_height // 2),
         'west': (30, target_height // 2)
     }
@@ -197,8 +217,8 @@ def main():
             fg_mask = bg_subtractor.apply(display_frame)
             
             for direction, region in regions.items():
-                x, y, w, h = region
-                roi = fg_mask[y:y+h, x:x+w]
+                x1, y1, x2, y2 = region['x1'], region['y1'], region['x2'], region['y2']
+                roi = fg_mask[y1:y2, x1:x2]
                 
                 # Count vehicles using contour detection
                 _, thresh = cv2.threshold(roi, 127, 255, cv2.THRESH_BINARY)
@@ -217,16 +237,16 @@ def main():
         
         # Draw visualization
         for direction, region in regions.items():
-            x, y, w, h = region
+            x1, y1, x2, y2 = region['x1'], region['y1'], region['x2'], region['y2']
             # Draw detection region with different colors based on vehicle presence
             color = (0, 255, 0) if last_counts[direction] > 0 else (255, 0, 0)
-            cv2.rectangle(display_frame, (x, y), (x + w, y + h), color, 2)
+            cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
             
             # Draw vehicle count with background for better visibility
             count_text = f"{direction}: {last_counts[direction]}"
             text_size = cv2.getTextSize(count_text, font, font_scale, font_thickness)[0]
-            cv2.rectangle(display_frame, (x, y - 25), (x + text_size[0], y - 5), (0, 0, 0), -1)
-            cv2.putText(display_frame, count_text, (x, y - 10),
+            cv2.rectangle(display_frame, (x1, y1 - 25), (x1 + text_size[0], y1 - 5), (0, 0, 0), -1)
+            cv2.putText(display_frame, count_text, (x1, y1 - 10),
                        font, font_scale, (255, 255, 255), font_thickness)
             
             light_x, light_y = traffic_lights[direction]
