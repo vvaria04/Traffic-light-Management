@@ -188,12 +188,20 @@ def main():
     font_scale = 0.7
     font_thickness = 2
     
-    # Initialize background subtractor for better vehicle detection
+    # Initialize background subtractor with adjusted parameters for better standing vehicle detection
     bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-        history=100,
-        varThreshold=50,
-        detectShadows=False
+        history=500,  # Increased history to better handle standing vehicles
+        varThreshold=25,  # Lower threshold to detect subtle changes
+        detectShadows=True  # Enable shadow detection
     )
+    
+    # Add motion history buffer for each region
+    motion_history = {
+        'north': deque(maxlen=30),  # Store last 30 frames of motion
+        'south': deque(maxlen=30),
+        'east': deque(maxlen=30),
+        'west': deque(maxlen=30)
+    }
     
     while True:
         frame_start_time = time.time()
@@ -220,12 +228,31 @@ def main():
                 x1, y1, x2, y2 = region['x1'], region['y1'], region['x2'], region['y2']
                 roi = fg_mask[y1:y2, x1:x2]
                 
-                # Count vehicles using contour detection
-                _, thresh = cv2.threshold(roi, 127, 255, cv2.THRESH_BINARY)
+                # Count vehicles using contour detection with improved parameters
+                _, thresh = cv2.threshold(roi, 50, 255, cv2.THRESH_BINARY)  # Lower threshold
                 contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 
-                # Filter contours by area to count vehicles
-                count = sum(1 for cnt in contours if cv2.contourArea(cnt) > MIN_VEHICLE_AREA)
+                # Calculate motion intensity in the region
+                motion_intensity = np.sum(thresh) / (thresh.size * 255)
+                motion_history[direction].append(motion_intensity)
+                
+                # Count vehicles with improved detection
+                count = 0
+                for cnt in contours:
+                    area = cv2.contourArea(cnt)
+                    if area > MIN_VEHICLE_AREA:
+                        # Check if contour is likely a vehicle
+                        x, y, w, h = cv2.boundingRect(cnt)
+                        aspect_ratio = float(w) / h
+                        if 0.5 < aspect_ratio < 3.0:  # Typical vehicle aspect ratio
+                            count += 1
+                
+                # Consider standing vehicles based on motion history
+                if count == 0 and len(motion_history[direction]) > 0:
+                    avg_motion = sum(motion_history[direction]) / len(motion_history[direction])
+                    if avg_motion > 0.1:  # If there was recent motion
+                        count = last_counts[direction]  # Keep previous count
+                
                 last_counts[direction] = count
                 traffic_system.update_vehicle_density(direction, count)
             
